@@ -150,7 +150,7 @@ class CFA(tf.keras.Model):
         optimizer.apply_gradients(zip(gradients_decoder_user, self.decoder_user.trainable_variables))
         optimizer.apply_gradients(zip(gradients_encoder_movie, self.encoder_movie.trainable_variables))
         optimizer.apply_gradients(zip(gradients_decoder_movie, self.decoder_movie.trainable_variables))
-        print("loss:",loss_all.numpy()/batch_size)
+        #print("loss:",loss_all.numpy()/batch_size)
 
 
     def prepare_predict(self): #计算所有 得要好几个小时
