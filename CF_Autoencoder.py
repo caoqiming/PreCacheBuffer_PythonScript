@@ -1,8 +1,11 @@
+#%%
 import numpy as np
 import tensorflow as tf
-from data_preprocess import get_user_info,get_movie_info
+from data_preprocess import get_user_info,get_movie_info,get_train_data,get_index_between_time
 import pickle
-
+import random
+import zipfile
+import os
 
 class TwoPartDense(tf.keras.layers.Layer): 
 
@@ -207,3 +210,196 @@ class CFA(tf.keras.Model):
         with open('./Movie_Rank.pkl', 'rb') as file:
             ans=pickle.load(file)
         return ans
+
+    #给联邦学习模块提供的接口
+
+    def get_layer_data(self,model)->list:
+        layer_data=[]
+        for one in model.layers:
+            layer_data.append(one.get_weights())
+        return layer_data
+
+    def set_layer_data(self,model,layer_data:list):
+        for i in range(0,len(layer_data)):
+            model.layers[i].set_weights(layer_data[i])
+        return
+
+    def model_subtract(self,model,previous_layer:list,save_path:str):
+        current_layer=self.get_layer_data(model)
+        for i in range(0,len(current_layer)):
+            old_new=[]
+            for j in range(0,len(current_layer[i])):
+                old_new.append(previous_layer[i][j]-current_layer[i][j])
+            model.layers[i].set_weights(old_new)
+        model.save_weights(save_path)
+        #还原模型参数
+        self.set_layer_data(model,current_layer)
+        return
+
+    def local_model_train(self,start_time=0.0,end_time=0.11)->str:
+        #保存训练前的参数
+        previous_layer_data_e_u=self.get_layer_data(self.encoder_user)
+        previous_layer_data_d_u=self.get_layer_data(self.decoder_user)
+        previous_layer_data_e_m=self.get_layer_data(self.encoder_movie)
+        previous_layer_data_d_m=self.get_layer_data(self.decoder_movie)
+
+        #开始训练
+
+        optimizer=tf.keras.optimizers.SGD(learning_rate=0.01)
+        begin_index,end_index=get_index_between_time(start_time,end_time)
+        indexs=list(range(begin_index,end_index))
+        random.shuffle(indexs)
+        rating_nums=len(indexs)
+        print("开始本地训练，读取%d条本地数据"%(rating_nums))
+        batch_size=5
+        batch=[]
+        for i in range(0,rating_nums):
+            batch.append(indexs[i])
+            if(i%1000==999):
+                print("本地训练中：已完成%f"%(100*i/(rating_nums+0.0)))
+            if(i%batch_size!=batch_size-1):
+                continue
+            train_data=get_train_data(batch)
+            self.train_step_batch(train_data,optimizer)
+            batch=[]
+        
+
+        #得到训练后的参数
+        self.model_subtract(self.encoder_user,previous_layer_data_e_u,"model/local_gradient/local_gradient_encoder_user.h5")
+        self.model_subtract(self.decoder_user,previous_layer_data_d_u,"model/local_gradient/local_gradient_decoder_user.h5")
+        self.model_subtract(self.encoder_movie,previous_layer_data_e_m,"model/local_gradient/local_gradient_encoder_movie.h5")
+        self.model_subtract(self.decoder_movie,previous_layer_data_d_m,"model/local_gradient/local_gradient_decoder_movie.h5")
+        #将四个模型参数文件打包成一个
+        zip = zipfile.ZipFile("model/local_gradient.zip","w",zipfile.ZIP_DEFLATED)
+        zip.write("model/local_gradient/local_gradient_encoder_user.h5","local_gradient_encoder_user.h5")
+        zip.write("model/local_gradient/local_gradient_decoder_user.h5","local_gradient_decoder_user.h5")
+        zip.write("model/local_gradient/local_gradient_encoder_movie.h5","local_gradient_encoder_movie.h5")
+        zip.write("model/local_gradient/local_gradient_decoder_movie.h5","local_gradient_decoder_movie.h5")
+        zip.close()
+        return "model/local_gradient.zip"
+
+        
+
+    def add_aggregate_gradient(self,path_list:list): # 将path_list中的参数相加并保存为"./model/AggregateGradient.zip" 这里保存的梯度数据是不能直接用的，因为还没有除以权值
+        #保存模型当前的参数
+        previous_layer_data_e_u=self.get_layer_data(self.encoder_user)
+        previous_layer_data_d_u=self.get_layer_data(self.decoder_user)
+        previous_layer_data_e_m=self.get_layer_data(self.encoder_movie)
+        previous_layer_data_d_m=self.get_layer_data(self.decoder_movie)
+
+        total_layer_data_e_u=[]
+        total_layer_data_d_u=[]
+        total_layer_data_e_m=[]
+        total_layer_data_d_m=[]
+        flag_inited=False
+        for path in path_list:
+            zip = zipfile.ZipFile(path)
+            zip.extractall("model/temp")
+            zip.close()
+            self.encoder_user.load_weights("./model/temp/local_gradient_encoder_user.h5")
+            self.decoder_user.load_weights("./model/temp/local_gradient_decoder_user.h5")
+            self.encoder_movie.load_weights("./model/temp/local_gradient_encoder_movie.h5")
+            self.decoder_movie.load_weights("./model/temp/local_gradient_decoder_movie.h5")
+            temp_layer_data_e_u=self.get_layer_data(self.encoder_user)
+            temp_layer_data_d_u=self.get_layer_data(self.decoder_user)
+            temp_layer_data_e_m=self.get_layer_data(self.encoder_movie)
+            temp_layer_data_d_m=self.get_layer_data(self.decoder_movie)
+            if not flag_inited:
+                total_layer_data_e_u=temp_layer_data_e_u
+                total_layer_data_d_u=temp_layer_data_d_u
+                total_layer_data_e_m=temp_layer_data_e_m
+                total_layer_data_d_m=temp_layer_data_d_m
+            else:
+                for i in range(0,len(total_layer_data_e_u)):
+                    for j in range(0,len(total_layer_data_e_u[i])):
+                        total_layer_data_e_u[i][j]=total_layer_data_e_u[i][j]+temp_layer_data_e_u[i][j]
+                for i in range(0,len(total_layer_data_d_u)):
+                    for j in range(0,len(total_layer_data_d_u[i])):
+                        total_layer_data_d_u[i][j]=total_layer_data_d_u[i][j]+temp_layer_data_d_u[i][j] 
+                for i in range(0,len(total_layer_data_e_m)):
+                    for j in range(0,len(total_layer_data_e_m[i])):
+                        total_layer_data_e_m[i][j]=total_layer_data_e_m[i][j]+temp_layer_data_e_m[i][j]
+                for i in range(0,len(total_layer_data_d_m)):
+                    for j in range(0,len(total_layer_data_d_m[i])):
+                        total_layer_data_d_m[i][j]=total_layer_data_d_m[i][j]+temp_layer_data_d_m[i][j]
+            
+        #保存相加后的数据
+        self.set_layer_data(self.encoder_user,total_layer_data_e_u)
+        self.set_layer_data(self.decoder_user,total_layer_data_d_u)
+        self.set_layer_data(self.encoder_movie,total_layer_data_e_m)
+        self.set_layer_data(self.decoder_movie,total_layer_data_d_m)
+        self.encoder_user.save_weights("./model/aggregate_encoder_user.h5")
+        self.decoder_user.save_weights("./model/aggregate_decoder_user.h5")
+        self.encoder_movie.save_weights("./model/aggregate_encoder_movie.h5")
+        self.decoder_movie.save_weights("./model/aggregate_decoder_movie.h5")
+        zip = zipfile.ZipFile("./model/AggregateGradient.zip","w",zipfile.ZIP_DEFLATED)
+        zip.write("./model/aggregate_encoder_user.h5","aggregate_encoder_user.h5")
+        zip.write("./model/aggregate_decoder_user.h5","aggregate_decoder_user.h5")
+        zip.write("./model/aggregate_encoder_movie.h5","aggregate_encoder_movie.h5")
+        zip.write("./model/aggregate_decoder_movie.h5","aggregate_decoder_movie.h5")
+        zip.close()
+        
+        self.set_layer_data(self.encoder_user,previous_layer_data_e_u)
+        self.set_layer_data(self.decoder_user,previous_layer_data_d_u)
+        self.set_layer_data(self.encoder_movie,previous_layer_data_e_m)
+        self.set_layer_data(self.decoder_movie,previous_layer_data_d_m)
+
+        return
+
+    def aggregate_root(self,weight:int):
+        #保存模型当前的参数
+        new_layer_data_e_u=self.get_layer_data(self.encoder_user)
+        new_layer_data_d_u=self.get_layer_data(self.decoder_user)
+        new_layer_data_e_m=self.get_layer_data(self.encoder_movie)
+        new_layer_data_d_m=self.get_layer_data(self.decoder_movie)
+        self.encoder_user.load_weights("./model/aggregate_encoder_user.h5")
+        self.decoder_user.load_weights("./model/aggregate_decoder_user.h5")
+        self.encoder_movie.load_weights("./model/aggregate_encoder_movie.h5")
+        self.decoder_movie.load_weights("./model/aggregate_decoder_movie.h5")
+        layer_data_e_u=self.get_layer_data(self.encoder_user)
+        layer_data_d_u=self.get_layer_data(self.decoder_user)
+        layer_data_e_m=self.get_layer_data(self.encoder_movie)
+        layer_data_d_m=self.get_layer_data(self.decoder_movie)
+        #相减得到新参数 因为local_model_train中保存的就是旧的参数减去新的参数
+        for i in range(0,len(layer_data_e_u)):
+            for j in range(0,len(layer_data_e_u[i])):
+                new_layer_data_e_u[i][j]=new_layer_data_e_u[i][j] - layer_data_e_u[i][j]/weight 
+        for i in range(0,len(layer_data_d_u)):
+            for j in range(0,len(layer_data_d_u[i])):
+                new_layer_data_d_u[i][j]=new_layer_data_d_u[i][j] - layer_data_d_u[i][j]/weight 
+        for i in range(0,len(layer_data_e_m)):
+            for j in range(0,len(layer_data_e_m[i])):
+                new_layer_data_e_m[i][j]=new_layer_data_e_m[i][j] - layer_data_e_m[i][j]/weight 
+        for i in range(0,len(layer_data_d_m)):
+            for j in range(0,len(layer_data_d_m[i])):
+                new_layer_data_d_m[i][j]=new_layer_data_d_m[i][j] - layer_data_d_m[i][j]/weight 
+
+        self.set_layer_data(self.encoder_user,new_layer_data_e_u)
+        self.set_layer_data(self.decoder_user,new_layer_data_d_u)
+        self.set_layer_data(self.encoder_movie,new_layer_data_e_m)
+        self.set_layer_data(self.decoder_movie,new_layer_data_d_m)
+        self.encoder_user.save_weights("./model/update_model/encoder_user.h5")
+        self.decoder_user.save_weights("./model/update_model/decoder_user.h5")
+        self.encoder_movie.save_weights("./model/update_model/encoder_movie.h5")
+        self.decoder_movie.save_weights("./model/update_model/decoder_movie.h5")
+        zip = zipfile.ZipFile("./model/update_model.zip","w",zipfile.ZIP_DEFLATED)
+        zip.write("./model/update_model/encoder_user.h5","encoder_user.h5")
+        zip.write("./model/update_model/decoder_user.h5","decoder_user.h5")
+        zip.write("./model/update_model/encoder_movie.h5","encoder_movie.h5")
+        zip.write("./model/update_model/decoder_movie.h5","decoder_movie.h5")
+        zip.close()
+        return
+
+    
+    def update_load_model(self,path:str): #从输入的路径加载模型
+        zip = zipfile.ZipFile(path)
+        zip.extractall("model/update_model")
+        zip.close()
+        self.encoder_user.load_weights("./model/update_model/encoder_user.h5")
+        self.decoder_user.load_weights("./model/update_model/decoder_user.h5")
+        self.encoder_movie.load_weights("./model/update_model/encoder_movie.h5")
+        self.decoder_movie.load_weights("./model/update_model/decoder_movie.h5")
+        return
+
+
+

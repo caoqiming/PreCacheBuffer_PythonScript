@@ -1,0 +1,12 @@
+{
+  "local_ip": "192.168.1.200",
+  "down_server": [ "192.168.118.130" ],
+  "up_server": "",
+  "port": 23339,
+  "local_model": 0,
+  "send_bytes_once": 1024,
+  "isparticipant": true,
+  "cloud_server": "192.168.1.101",
+  "optimizer": "FSVRGop",
+  "data_id": 1
+}
