@@ -1,4 +1,3 @@
-#%%
 import numpy as np
 import tensorflow as tf
 from data_preprocess import get_user_info,get_movie_info,get_train_data,get_index_between_time
@@ -113,7 +112,6 @@ class CFA(tf.keras.Model):
         gradients_decoder_movie = tape.gradient(loss,self.decoder_movie.trainable_variables)
         return gradients_encoder_user,gradients_decoder_user,gradients_encoder_movie,gradients_decoder_movie,loss
 
-    @tf.function
     def train_step_batch(self,inputs,optimizer,a1=0.5,a2=0.5,noise_factor=0.02):
         #生成噪声
         batch_size=len(inputs)
@@ -236,7 +234,7 @@ class CFA(tf.keras.Model):
         self.set_layer_data(model,current_layer)
         return
 
-    def local_model_train(self,start_time=0.0,end_time=0.11)->str:
+    def local_model_train(self,start_time=0.0,end_time=0.11)->str: # 0 0.11
         #保存训练前的参数
         previous_layer_data_e_u=self.get_layer_data(self.encoder_user)
         previous_layer_data_d_u=self.get_layer_data(self.decoder_user)
@@ -265,22 +263,22 @@ class CFA(tf.keras.Model):
         
 
         #得到训练后的参数
-        self.model_subtract(self.encoder_user,previous_layer_data_e_u,"model/local_gradient/local_gradient_encoder_user.h5")
-        self.model_subtract(self.decoder_user,previous_layer_data_d_u,"model/local_gradient/local_gradient_decoder_user.h5")
-        self.model_subtract(self.encoder_movie,previous_layer_data_e_m,"model/local_gradient/local_gradient_encoder_movie.h5")
-        self.model_subtract(self.decoder_movie,previous_layer_data_d_m,"model/local_gradient/local_gradient_decoder_movie.h5")
+        self.model_subtract(self.encoder_user,previous_layer_data_e_u,"model/local_gradient/gradient_encoder_user.h5")
+        self.model_subtract(self.decoder_user,previous_layer_data_d_u,"model/local_gradient/gradient_decoder_user.h5")
+        self.model_subtract(self.encoder_movie,previous_layer_data_e_m,"model/local_gradient/gradient_encoder_movie.h5")
+        self.model_subtract(self.decoder_movie,previous_layer_data_d_m,"model/local_gradient/gradient_decoder_movie.h5")
         #将四个模型参数文件打包成一个
         zip = zipfile.ZipFile("model/local_gradient.zip","w",zipfile.ZIP_DEFLATED)
-        zip.write("model/local_gradient/local_gradient_encoder_user.h5","local_gradient_encoder_user.h5")
-        zip.write("model/local_gradient/local_gradient_decoder_user.h5","local_gradient_decoder_user.h5")
-        zip.write("model/local_gradient/local_gradient_encoder_movie.h5","local_gradient_encoder_movie.h5")
-        zip.write("model/local_gradient/local_gradient_decoder_movie.h5","local_gradient_decoder_movie.h5")
+        zip.write("model/local_gradient/gradient_encoder_user.h5","gradient_encoder_user.h5")
+        zip.write("model/local_gradient/gradient_decoder_user.h5","gradient_decoder_user.h5")
+        zip.write("model/local_gradient/gradient_encoder_movie.h5","gradient_encoder_movie.h5")
+        zip.write("model/local_gradient/gradient_decoder_movie.h5","gradient_decoder_movie.h5")
         zip.close()
         return "model/local_gradient.zip"
 
         
 
-    def add_aggregate_gradient(self,path_list:list): # 将path_list中的参数相加并保存为"./model/AggregateGradient.zip" 这里保存的梯度数据是不能直接用的，因为还没有除以权值
+    def add_aggregate_gradient(self,path_list:list): # 将path_list中的参数相加并保存为"./model/aggregate_gradient.zip" 这里保存的梯度数据是不能直接用的，因为还没有除以权值
         #保存模型当前的参数
         previous_layer_data_e_u=self.get_layer_data(self.encoder_user)
         previous_layer_data_d_u=self.get_layer_data(self.decoder_user)
@@ -296,10 +294,10 @@ class CFA(tf.keras.Model):
             zip = zipfile.ZipFile(path)
             zip.extractall("model/temp")
             zip.close()
-            self.encoder_user.load_weights("./model/temp/local_gradient_encoder_user.h5")
-            self.decoder_user.load_weights("./model/temp/local_gradient_decoder_user.h5")
-            self.encoder_movie.load_weights("./model/temp/local_gradient_encoder_movie.h5")
-            self.decoder_movie.load_weights("./model/temp/local_gradient_decoder_movie.h5")
+            self.encoder_user.load_weights("./model/temp/gradient_encoder_user.h5")
+            self.decoder_user.load_weights("./model/temp/gradient_decoder_user.h5")
+            self.encoder_movie.load_weights("./model/temp/gradient_encoder_movie.h5")
+            self.decoder_movie.load_weights("./model/temp/gradient_decoder_movie.h5")
             temp_layer_data_e_u=self.get_layer_data(self.encoder_user)
             temp_layer_data_d_u=self.get_layer_data(self.decoder_user)
             temp_layer_data_e_m=self.get_layer_data(self.encoder_movie)
@@ -328,15 +326,15 @@ class CFA(tf.keras.Model):
         self.set_layer_data(self.decoder_user,total_layer_data_d_u)
         self.set_layer_data(self.encoder_movie,total_layer_data_e_m)
         self.set_layer_data(self.decoder_movie,total_layer_data_d_m)
-        self.encoder_user.save_weights("./model/aggregate_encoder_user.h5")
-        self.decoder_user.save_weights("./model/aggregate_decoder_user.h5")
-        self.encoder_movie.save_weights("./model/aggregate_encoder_movie.h5")
-        self.decoder_movie.save_weights("./model/aggregate_decoder_movie.h5")
-        zip = zipfile.ZipFile("./model/AggregateGradient.zip","w",zipfile.ZIP_DEFLATED)
-        zip.write("./model/aggregate_encoder_user.h5","aggregate_encoder_user.h5")
-        zip.write("./model/aggregate_decoder_user.h5","aggregate_decoder_user.h5")
-        zip.write("./model/aggregate_encoder_movie.h5","aggregate_encoder_movie.h5")
-        zip.write("./model/aggregate_decoder_movie.h5","aggregate_decoder_movie.h5")
+        self.encoder_user.save_weights("./model/aggregate/gradient_encoder_user.h5")
+        self.decoder_user.save_weights("./model/aggregate/gradient_decoder_user.h5")
+        self.encoder_movie.save_weights("./model/aggregate/gradient_encoder_movie.h5")
+        self.decoder_movie.save_weights("./model/aggregate/gradient_decoder_movie.h5")
+        zip = zipfile.ZipFile("./model/aggregate_gradient.zip","w",zipfile.ZIP_DEFLATED)
+        zip.write("./model/aggregate/gradient_encoder_user.h5","gradient_encoder_user.h5")
+        zip.write("./model/aggregate/gradient_decoder_user.h5","gradient_decoder_user.h5")
+        zip.write("./model/aggregate/gradient_encoder_movie.h5","gradient_encoder_movie.h5")
+        zip.write("./model/aggregate/gradient_decoder_movie.h5","gradient_decoder_movie.h5")
         zip.close()
         
         self.set_layer_data(self.encoder_user,previous_layer_data_e_u)
@@ -352,10 +350,10 @@ class CFA(tf.keras.Model):
         new_layer_data_d_u=self.get_layer_data(self.decoder_user)
         new_layer_data_e_m=self.get_layer_data(self.encoder_movie)
         new_layer_data_d_m=self.get_layer_data(self.decoder_movie)
-        self.encoder_user.load_weights("./model/aggregate_encoder_user.h5")
-        self.decoder_user.load_weights("./model/aggregate_decoder_user.h5")
-        self.encoder_movie.load_weights("./model/aggregate_encoder_movie.h5")
-        self.decoder_movie.load_weights("./model/aggregate_decoder_movie.h5")
+        self.encoder_user.load_weights("./model/aggregate/gradient_encoder_user.h5")
+        self.decoder_user.load_weights("./model/aggregate/gradient_decoder_user.h5")
+        self.encoder_movie.load_weights("./model/aggregate/gradient_encoder_movie.h5")
+        self.decoder_movie.load_weights("./model/aggregate/gradient_decoder_movie.h5")
         layer_data_e_u=self.get_layer_data(self.encoder_user)
         layer_data_d_u=self.get_layer_data(self.decoder_user)
         layer_data_e_m=self.get_layer_data(self.encoder_movie)
@@ -390,7 +388,6 @@ class CFA(tf.keras.Model):
         zip.close()
         return
 
-    
     def update_load_model(self,path:str): #从输入的路径加载模型
         zip = zipfile.ZipFile(path)
         zip.extractall("model/update_model")
@@ -400,6 +397,13 @@ class CFA(tf.keras.Model):
         self.encoder_movie.load_weights("./model/update_model/encoder_movie.h5")
         self.decoder_movie.load_weights("./model/update_model/decoder_movie.h5")
         return
+
+    def load_init_model(self):
+        self.encoder_user.load_weights("./model/init_model/encoder_user.h5")
+        self.decoder_user.load_weights("./model/init_model/decoder_user.h5")
+        self.encoder_movie.load_weights("./model/init_model/encoder_movie.h5")
+        self.decoder_movie.load_weights("./model/init_model/decoder_movie.h5")
+
 
 
 

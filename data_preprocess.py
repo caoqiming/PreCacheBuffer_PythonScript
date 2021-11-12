@@ -32,7 +32,7 @@ RatingMatrix=np.zeros((m,n),dtype=np.float32)
 for one in rating_list:
     RatingMatrix[one.uid_-1][one.movieid_-1]=one.rating_
 
-def get_train_data(index : list) -> list: #输入一个序号 序号对应的rating.dat中的训练数据，支持批量
+def get_train_data(index : list) -> list: #输入一个序号 序号对应的rating.dat(ratings_ordered)中的训练数据，支持批量
     train_data=list()
     for one_index in index:
         one_data=dict()

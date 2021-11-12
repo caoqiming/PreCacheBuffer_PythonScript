@@ -53,8 +53,7 @@ class FLserver:
         #获取本机IP
         self.local_ip=socket.gethostbyname(hostname)
         self.G_s=util.Glimmer_send.Glimmer_send((self.local_ip,self.port),self)
-        self.local_model=self.create_model()
-        self.temp_model=self.create_model()
+
 
         with open(config_file,'r',encoding='utf-8')as fp:
             json_data = json.load(fp)
@@ -62,6 +61,7 @@ class FLserver:
             self.up_server=json_data['up_server']
             self.down_server=json_data['down_server']
             self.port=json_data['port']
+            self.cloud_server_port=json_data['cloud_server_port']
             self.send_bytes_once=json_data['send_bytes_once']
             self.data_id=json_data['data_id']
             self.n_down_server=len(self.down_server)
@@ -86,7 +86,7 @@ class FLserver:
         self.clear_buffer()
         self.G_s.local_ip=self.local_ip
         self.mymodel=CFA(6040,3952,29,18,64,128)
-
+        self.mymodel.load_init_model()
         return
     def listen(self):
         server_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -161,13 +161,6 @@ class FLserver:
         self.th_show.start()
         self.th_timed_task= threading.Thread(target=self.timed_task, args=())
         self.th_timed_task.start()
-
-        #获取本地数据（mnist）
-        npdata=np.load("./model/mnist"+str(self.data_id)+".npz")
-        self.train_x=npdata["nodex"]
-        self.train_y=npdata["nodey"]
-        self.train_x = self.train_x / 255.0
-        self.train_y=tf.one_hot(self.train_y,depth=10,dtype=tf.uint8)
         return
     def stop(self):
         self.running=False
@@ -185,14 +178,14 @@ class FLserver:
                 #print("state changes to:",self.state)
                 last_state=self.state
             order_json=json.dumps({"order":"send_state","ip":s.local_ip,"isroot":self.isroot,"state":self.state,"up_server":self.up_server,"down_server":self.down_server})
-            self.udp_send((self.cloud_server,self.port),order_json.encode('utf-8'))   
+            self.udp_send((self.cloud_server,self.cloud_server_port),order_json.encode('utf-8'))   
         return#向云服务器上传状态
     def change_topology(self,json_data):
         print("start to change_topology")
         if self.state!=1:
             text="ip:"+self.local_ip+",isn't in state 1,refuse to change topology"
             sendjson=json.dumps({"order":"print","text":""})
-            self.udp_send((self.cloud_server,self.port),sendjson.encode('utf-8'))
+            self.udp_send((self.cloud_server,self.cloud_server_port),sendjson.encode('utf-8'))
             return
         self.state_lock.acquire()
         self.up_server=json_data['up_server']
@@ -204,7 +197,7 @@ class FLserver:
         self.clear_buffer()
         self.state_lock.release()
         sendjson=json.dumps({"order":"feedback","ip":self.local_ip ,"detail":"topology_changed"})
-        self.udp_send((self.cloud_server,self.port),sendjson.encode('utf-8'))
+        self.udp_send((self.cloud_server,self.cloud_server_port),sendjson.encode('utf-8'))
         print("------------change_topology success----------")
         print("is_root:{}\nup_server:{}\ndown_server:{}".format(self.isroot,self.up_server,self.down_server))
         return
@@ -269,9 +262,9 @@ class FLserver:
         self.state=4
         self.state_lock.release()
 
-        self.mymodel.update_load_model("./model/UpdateModel.zip")
+        self.mymodel.update_load_model("./model/update_model.zip")
         
-        with open("./model/UpdateModel.zip","rb") as f:
+        with open("./model/update_model.zip","rb") as f:
             data_bytes = f.read()
         for i in range(0,self.n_down_server):#向下层发送更新数据
             print("send new model to "+self.down_server[i])
@@ -313,7 +306,7 @@ class FLserver:
 
         if not self.isroot:#非根节点
             all_weight=self.add_aggregate_gradient()#本地聚合
-            with open("./model/AggregateGradient.zip","rb") as f:
+            with open("./model/aggregate_gradient.zip","rb") as f:
                 data_bytes = f.read()
             self.G_s.send((self.up_server,self.port),{"call_back":"cb_child_aggregation","weight":str(all_weight)},data_bytes)#向上层发送聚合结果
             self.state_lock.acquire()#非root进入状态1等待分发新模型
@@ -354,7 +347,7 @@ class FLserver:
         up_ip=addr[0]
         if up_ip != self.up_server:
             raise ValueError("receive data from"+up_ip+" ,but this ip is not my up server")
-        with open("./model/UpdateModel.zip","wb") as f:
+        with open("./model/update_model.zip","wb") as f:
             f.write(data)
         self.start_update()
         return

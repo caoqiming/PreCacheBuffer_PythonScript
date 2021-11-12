@@ -10,6 +10,7 @@ n=3952 #电影的个数
 #用户数 电影数 用户额外信息 电影额外信息 隐藏层 l1层
 model=CFA(6040,3952,29,18,64,128)
 
+# 因为没有实际上没有调用模型
 # model.encoder_user.load_weights("./model/encoder_user.h5")
 # model.decoder_user.load_weights("./model/decoder_user.h5")
 # model.encoder_movie.load_weights("./model/encoder_movie.h5")
