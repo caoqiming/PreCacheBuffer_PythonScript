@@ -23,10 +23,10 @@ if __name__ == '__main__':
     end_time=float(sys.argv[2])
     save_index=sys.argv[3]
     optimizer=tf.keras.optimizers.SGD(learning_rate=0.01)
-    model.encoder_user.load_weights("./model/encoder_user.h5")
-    model.decoder_user.load_weights("./model/decoder_user.h5")
-    model.encoder_movie.load_weights("./model/encoder_movie.h5")
-    model.decoder_movie.load_weights("./model/decoder_movie.h5")
+    model.encoder_user.load_weights("./model/init_model/encoder_user.h5")
+    model.decoder_user.load_weights("./model/init_model/decoder_user.h5")
+    model.encoder_movie.load_weights("./model/init_model/encoder_movie.h5")
+    model.decoder_movie.load_weights("./model/init_model/decoder_movie.h5")
 
     begin_index,end_index=get_index_between_time(start_time,end_time)
     indexs=list(range(begin_index,end_index))
